@@ -17,7 +17,6 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.getValue
@@ -80,7 +79,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun CsvTable(csvData: String, categoryBudgets: Map<String, Float>): Double {
+fun CsvTable(csvData: String, categoryBudgets: Map<String, Float>) {
     if (csvData.isBlank()) {
         Text(
             "A clean slate! Ready to log your first expense?",
@@ -90,7 +89,7 @@ fun CsvTable(csvData: String, categoryBudgets: Map<String, Float>): Double {
                 .fillMaxWidth()
                 .padding(16.dp)
         )
-        return 0.0
+        return
     }
     val currentMonthName = YearMonth.now().month.getDisplayName(TextStyle.FULL, Locale.getDefault())
     val previousMonthName = YearMonth.now().minusMonths(1).month.getDisplayName(TextStyle.FULL, Locale.getDefault())
@@ -124,9 +123,10 @@ fun CsvTable(csvData: String, categoryBudgets: Map<String, Float>): Double {
     Column(modifier = Modifier.padding(top = 8.dp)) {
         Row(Modifier.padding(vertical = 8.dp)) {
             Text("Category", modifier = Modifier.weight(0.8f), fontWeight = FontWeight.Bold)
-            Text("Budget", modifier = Modifier.weight(0.7f), fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+            Text("Budgeted", modifier = Modifier.weight(0.7f), fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
             filteredHeader.drop(1).forEach { monthName ->
-                Text(monthName, modifier = Modifier.weight(0.7f), fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                val headerText = if (monthName == currentMonthName) "Spent" else monthName
+                Text(headerText, modifier = Modifier.weight(0.7f), fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
             }
         }
 
@@ -177,7 +177,6 @@ fun CsvTable(csvData: String, categoryBudgets: Map<String, Float>): Double {
             }
         }
     }
-    return if (currentMonthDataIndex != -1) columnTotals.getOrNull(currentMonthDataIndex) ?: 0.0 else 0.0
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -385,13 +384,13 @@ fun ExpenseScreen(modifier: Modifier = Modifier) {
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                Text("This Month's Expenses:", style = MaterialTheme.typography.titleLarge)
+                Text("${YearMonth.now().month.getDisplayName(TextStyle.FULL, Locale.getDefault())}'s Expenses:", style = MaterialTheme.typography.titleLarge)
                 CsvTable(csvData = csvContent, categoryBudgets = categoryBudgets)
 
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(text = "Your Grand Plan", fontWeight = FontWeight.Bold)
+                    Text(text = "Total amount spent in this month", fontWeight = FontWeight.Bold)
                     Text(text = String.format("$%.2f / $%.0f", monthlyTotal, overallBudget), fontWeight = FontWeight.Bold)
                 }
                 Spacer(modifier = Modifier.height(4.dp))
@@ -417,11 +416,11 @@ fun ExpenseScreen(modifier: Modifier = Modifier) {
                             Text(text = category)
                         }
                     }
-                    IconButton(onClick = {
+                    OutlinedButton(onClick = {
                         tempCategoryBudgets = categoryBudgets.mapValues { it.value.roundToInt().toString() }
                         showBudgetSettings = true
                     }) {
-                        Icon(imageVector = Icons.Default.Settings, contentDescription = "Budget Settings")
+                        Text(text = "Edit Budget")
                     }
                 }
 
