@@ -151,7 +151,7 @@ fun CsvTable(csvData: String, categoryBudgets: Map<String, Float>) {
                 Text(categoryName, modifier = Modifier.weight(0.8f))
                 Column(modifier = Modifier.weight(0.7f), horizontalAlignment = Alignment.CenterHorizontally) {
                     if (categoryBudget > 0) {
-                        Text(String.format("$%.0f", categoryBudget), fontSize = 12.sp)
+                        Text(String.format(Locale.US, "$%.0f", categoryBudget), fontSize = 12.sp)
                         LinearProgressIndicator(
                             progress = { animatedProgress },
                             modifier = Modifier
@@ -172,7 +172,7 @@ fun CsvTable(csvData: String, categoryBudgets: Map<String, Float>) {
             Row(Modifier.padding(vertical = 8.dp)) {
                 Text("Total", modifier = Modifier.weight(1.5f), fontWeight = FontWeight.Bold)
                 columnTotals.drop(1).forEach { total ->
-                    Text(text = String.format("%.2f", total), modifier = Modifier.weight(0.7f), fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                    Text(text = String.format(Locale.US, "%.2f", total), modifier = Modifier.weight(0.7f), fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
                 }
             }
         }
@@ -391,7 +391,7 @@ fun ExpenseScreen(modifier: Modifier = Modifier) {
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(text = "Total amount spent in this month", fontWeight = FontWeight.Bold)
-                    Text(text = String.format("$%.2f / $%.0f", monthlyTotal, overallBudget), fontWeight = FontWeight.Bold)
+                    Text(text = String.format(Locale.US, "$%.2f / $%.0f", monthlyTotal, overallBudget), fontWeight = FontWeight.Bold)
                 }
                 Spacer(modifier = Modifier.height(4.dp))
                 LinearProgressIndicator(
