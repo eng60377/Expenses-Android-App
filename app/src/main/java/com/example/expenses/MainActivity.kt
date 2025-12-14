@@ -5,6 +5,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.core.content.edit
 // Animation imports
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateFloatAsState
@@ -17,6 +18,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.getValue
@@ -37,6 +39,15 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.expenses.ui.theme.ExpensesTheme
+import com.patrykandpatryk.vico.compose.axis.horizontal.rememberBottomAxis
+import com.patrykandpatryk.vico.compose.axis.vertical.rememberStartAxis
+import com.patrykandpatryk.vico.compose.chart.Chart
+import com.patrykandpatryk.vico.compose.chart.column.columnChart
+import com.patrykandpatryk.vico.core.axis.AxisPosition
+import com.patrykandpatryk.vico.core.axis.formatter.AxisValueFormatter
+import com.patrykandpatryk.vico.core.entry.ChartEntry
+import com.patrykandpatryk.vico.core.entry.ChartEntryModelProducer
+import com.patrykandpatryk.vico.core.entry.entryOf
 import java.io.File
 import java.time.YearMonth
 import java.time.format.TextStyle
@@ -46,19 +57,13 @@ import kotlin.math.roundToInt
 // --- Define Custom Color ---
 val dollarBillGreen = Color(0xFFE5E4E2).copy(green = 0.95f)
 
-// --- Data class for managing budget state ---
-data class BudgetState(
-    val isSetupComplete: Boolean = false,
-    val commitmentEndDate: Long = 0L
-)
-
 // --- Enum for Mascot State ---
 enum class MascotState {
     HAPPY, NERVOUS, SAD
 }
 
 // --- Default categories for first run ---
-val defaultCategories = setOf("Food", "Groceries", "Transportation", "Utilities")
+val defaultCategories = setOf("Food", "Groceries", "Transport", "Utilities")
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 class MainActivity : ComponentActivity() {
@@ -191,19 +196,11 @@ fun ExpenseScreen(modifier: Modifier = Modifier) {
 
     val categories = remember { mutableStateListOf<String>() }
 
-    var budgetState by remember {
-        mutableStateOf(
-            BudgetState(
-                isSetupComplete = sharedPrefs.getBoolean("is_setup_complete", false),
-                commitmentEndDate = sharedPrefs.getLong("commitment_end_date", 0L)
-            )
-        )
-    }
-    var showBudgetSettings by remember { mutableStateOf(!budgetState.isSetupComplete) }
-    var penaltyPoints by remember { mutableStateOf(sharedPrefs.getInt("penalty_points", 0)) }
+    var isSetupComplete by remember { mutableStateOf(sharedPrefs.getBoolean("is_setup_complete", false)) }
+    var showBudgetSettings by remember { mutableStateOf(!isSetupComplete) }
+    var showHistory by remember { mutableStateOf(false) }
     val categoryBudgets = remember { mutableStateMapOf<String, Float>() }
     var tempCategoryBudgets by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
-    var commitmentMonths by remember { mutableStateOf("3") }
     var newCategoryText by remember { mutableStateOf("") }
     val focusRequester = remember { FocusRequester() }
 
@@ -231,267 +228,342 @@ fun ExpenseScreen(modifier: Modifier = Modifier) {
     }
 
     Box(modifier = modifier.padding(16.dp)) {
-        if (showBudgetSettings) {
-            // --- UI #1: Full-Screen Budget Settings ---
-            // This entire block for the settings UI is complete and correct.
-            Column {
-                Text("Plan Your Budget", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                if (!budgetState.isSetupComplete) {
-                    Text("Set your budget to begin.", style = MaterialTheme.typography.bodyMedium)
-                }
-                Spacer(modifier = Modifier.height(8.dp))
+        when {
+            showBudgetSettings -> {
+                // --- UI #1: Full-Screen Budget Settings ---
+                Column {
+                    Text("Plan Your Budget", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    if (!isSetupComplete) {
+                        Text("Set your budget to begin.", style = MaterialTheme.typography.bodyMedium)
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
 
-                LazyColumn(modifier = Modifier.weight(1f)) {
-                    items(categories.sorted()) { category ->
-                        Row(modifier = Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text(category, modifier = Modifier.weight(1f))
-                            TextField(
-                                value = tempCategoryBudgets[category] ?: "",
-                                onValueChange = { newValue -> tempCategoryBudgets = tempCategoryBudgets + (category to newValue) },
-                                label = { Text("Budget") },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                singleLine = true,
-                                modifier = Modifier.width(120.dp)
-                            )
+                    LazyColumn(modifier = Modifier.weight(1f)) {
+                        items(categories.sorted()) { category ->
+                            Row(modifier = Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(category, modifier = Modifier.weight(1f))
+                                TextField(
+                                    value = tempCategoryBudgets[category] ?: "",
+                                    onValueChange = { newValue -> tempCategoryBudgets = tempCategoryBudgets + (category to newValue) },
+                                    label = { Text("Budget") },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    singleLine = true,
+                                    modifier = Modifier.width(120.dp)
+                                )
+                            }
                         }
                     }
-                }
 
-                Row(modifier = Modifier.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    TextField(
-                        value = newCategoryText,
-                        onValueChange = { newCategoryText = it },
-                        label = { Text("Add New Expense Category") },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(onDone = {
+                    Row(modifier = Modifier.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        TextField(
+                            value = newCategoryText,
+                            onValueChange = { newCategoryText = it },
+                            label = { Text("Add New Expense Category") },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                            keyboardActions = KeyboardActions(onDone = {
+                                if (newCategoryText.isNotBlank() && !categories.contains(newCategoryText)) {
+                                    categories.add(newCategoryText)
+                                    tempCategoryBudgets = tempCategoryBudgets + (newCategoryText to "0")
+                                    newCategoryText = ""
+                                    focusManager.clearFocus()
+                                }
+                            })
+                        )
+                        IconButton(onClick = {
                             if (newCategoryText.isNotBlank() && !categories.contains(newCategoryText)) {
                                 categories.add(newCategoryText)
                                 tempCategoryBudgets = tempCategoryBudgets + (newCategoryText to "0")
                                 newCategoryText = ""
-                                focusManager.clearFocus()
                             }
-                        })
-                    )
-                    IconButton(onClick = {
-                        if (newCategoryText.isNotBlank() && !categories.contains(newCategoryText)) {
-                            categories.add(newCategoryText)
-                            tempCategoryBudgets = tempCategoryBudgets + (newCategoryText to "0")
-                            newCategoryText = ""
-                        }
-                    }) {
-                        Icon(Icons.Default.Add, contentDescription = "Add Category")
-                    }
-                }
-
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 8.dp)) {
-                    Text("Commitment Period (Months):", modifier = Modifier.weight(1f))
-                    TextField(
-                        value = commitmentMonths,
-                        onValueChange = { commitmentMonths = it.filter { char -> char.isDigit() } },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true,
-                        modifier = Modifier.width(80.dp)
-                    )
-                }
-
-                Button(
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = {
-                        val editor = sharedPrefs.edit()
-                        val currentEpochMonth = YearMonth.now().let { it.year * 12L + it.monthValue }
-
-                        if (budgetState.isSetupComplete && currentEpochMonth < budgetState.commitmentEndDate) {
-                            penaltyPoints += 10
-                            editor.putInt("penalty_points", penaltyPoints)
-                        }
-
-                        editor.putStringSet("user_categories", categories.toSet())
-
-                        tempCategoryBudgets.forEach { (category, budgetStr) ->
-                            val budgetFloat = budgetStr.toFloatOrNull() ?: 0f
-                            categoryBudgets[category] = budgetFloat
-                            editor.putFloat("budget_$category", budgetFloat)
-                        }
-
-                        val newCommitmentEndDate = currentEpochMonth + (commitmentMonths.toLongOrNull() ?: 3)
-                        editor.putBoolean("is_setup_complete", true)
-                        editor.putLong("commitment_end_date", newCommitmentEndDate)
-                        editor.apply()
-
-                        budgetState = BudgetState(isSetupComplete = true, commitmentEndDate = newCommitmentEndDate)
-                        showBudgetSettings = false
-                        focusManager.clearFocus()
-                    }
-                ) {
-                    Text(if (budgetState.isSetupComplete) "Update Plan & Accept Penalty" else "Start tracking expenses")
-                }
-            }
-        } else {
-            // --- UI #2: Full-Screen Main Dashboard ---
-            Column {
-                val overallBudget = categoryBudgets.values.sum()
-                val monthlyTotal = remember(csvContent) {
-                    val lines = csvContent.trim().split('\n').filter { it.isNotBlank() }
-                    if (lines.size <= 1) return@remember 0.0
-
-                    val header = lines.first().split(',')
-                    val currentMonthName = YearMonth.now().month.getDisplayName(TextStyle.FULL, Locale.getDefault())
-                    val monthIndex = header.indexOf(currentMonthName)
-                    if (monthIndex == -1) return@remember 0.0
-
-                    lines.drop(1).sumOf { row ->
-                        row.split(',').getOrNull(monthIndex)?.toDoubleOrNull() ?: 0.0
-                    }
-                }
-
-                val rawProgress by remember(monthlyTotal, overallBudget) {
-                    derivedStateOf {
-                        if (overallBudget > 0) (monthlyTotal / overallBudget).toFloat() else 0f
-                    }
-                }
-
-                val currentMascotState by remember(rawProgress) {
-                    derivedStateOf {
-                        when {
-                            rawProgress > 1.0f -> MascotState.SAD
-                            rawProgress > 0.9f -> MascotState.NERVOUS
-                            else -> MascotState.HAPPY
-                        }
-                    }
-                }
-
-                val animatedOverallProgress by animateFloatAsState(
-                    targetValue = rawProgress.coerceIn(0f, 1f),
-                    label = "OverallProgressAnimation"
-                )
-
-                Crossfade(targetState = currentMascotState, label = "MascotCrossfade") { mascotState ->
-                    val mascotRes = when (mascotState) {
-                        MascotState.SAD -> R.drawable.mascot_sad
-                        MascotState.NERVOUS -> R.drawable.mascot_nervous
-                        MascotState.HAPPY -> R.drawable.mascot_happy
-                    }
-                    Image(
-                        painter = painterResource(id = mascotRes),
-                        contentDescription = "Budget Mascot",
-                        modifier = Modifier
-                            .size(80.dp)
-                            .align(Alignment.CenterHorizontally)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Text("${YearMonth.now().month.getDisplayName(TextStyle.FULL, Locale.getDefault())}'s Expenses:", style = MaterialTheme.typography.titleLarge)
-                CsvTable(csvData = csvContent, categoryBudgets = categoryBudgets)
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(text = "Total amount spent in this month", fontWeight = FontWeight.Bold)
-                    Text(text = String.format(Locale.US, "$%.2f / $%.0f", monthlyTotal, overallBudget), fontWeight = FontWeight.Bold)
-                }
-                Spacer(modifier = Modifier.height(4.dp))
-                LinearProgressIndicator(
-                    progress = { animatedOverallProgress },
-                    modifier = Modifier.fillMaxWidth(),
-                    color = if (rawProgress > 0.9) Color.Red else if (rawProgress > 0.75) Color.Yellow else Color.Green
-                )
-
-                Text("Penalty Points: $penaltyPoints", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(16.dp))
-                Spacer(modifier = Modifier.weight(1f))
-
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    categories.sorted().forEach { category ->
-                        Button(onClick = {
-                            selectedExpense = category
-                            text = ""
                         }) {
-                            Text(text = category)
+                            Icon(Icons.Default.Add, contentDescription = "Add Category")
                         }
                     }
-                    OutlinedButton(onClick = {
-                        tempCategoryBudgets = categoryBudgets.mapValues { it.value.roundToInt().toString() }
-                        showBudgetSettings = true
-                    }) {
-                        Text(text = "Edit Budget")
-                    }
-                }
 
-                if (selectedExpense != null) {
-                    val saveAction = {
-                        if (text.isNotBlank()) {
-                            val currentMonth = YearMonth.now().month.getDisplayName(TextStyle.FULL, Locale.getDefault())
-                            val newValue = text.toDoubleOrNull() ?: 0.0
-                            val file = File(context.filesDir, "expenses.csv")
+                    Button(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = {
+                            sharedPrefs.edit {
+                                putStringSet("user_categories", categories.toSet())
 
-                            val lines = if (file.exists() && file.readText().isNotBlank()) file.readLines() else emptyList()
-                            val header = if (lines.isNotEmpty()) lines[0].split(',').toMutableList() else mutableListOf("Category")
-                            val dataMap = if (lines.size > 1) {
-                                lines.drop(1).mapNotNull { line ->
-                                    val parts = line.split(',')
-                                    if (parts.isNotEmpty()) parts[0] to parts.drop(1).toMutableList() else null
-                                }.toMap().toMutableMap()
-                            } else {
-                                mutableMapOf()
-                            }
-
-                            if (!header.contains(currentMonth)) {
-                                header.add(currentMonth)
-                            }
-                            val monthIndex = header.indexOf(currentMonth) - 1
-
-                            if (!dataMap.containsKey(selectedExpense!!)) {
-                                dataMap[selectedExpense!!] = mutableListOf()
-                            }
-                            val categoryData = dataMap[selectedExpense!!]!!
-                            while (categoryData.size <= monthIndex) {
-                                categoryData.add("0.0")
-                            }
-                            val oldValue = categoryData[monthIndex].toDoubleOrNull() ?: 0.0
-                            categoryData[monthIndex] = (oldValue + newValue).toString()
-
-                            val updatedCsvContent = buildString {
-                                appendLine(header.joinToString(","))
-                                dataMap.keys.sorted().forEach { category ->
-                                    val rowData = dataMap[category]!!
-                                    while (rowData.size < header.size - 1) {
-                                        rowData.add("0.0")
-                                    }
-                                    appendLine("$category,${rowData.joinToString(",")}")
+                                tempCategoryBudgets.forEach { (category, budgetStr) ->
+                                    val budgetFloat = budgetStr.toFloatOrNull() ?: 0f
+                                    categoryBudgets[category] = budgetFloat
+                                    putFloat("budget_$category", budgetFloat)
                                 }
-                            }.trim()
 
-                            file.writeText(updatedCsvContent)
-                            csvContent = updatedCsvContent
+                                putBoolean("is_setup_complete", true)
+                            }
 
-                            selectedExpense = null
-                            text = ""
+                            isSetupComplete = true
+                            showBudgetSettings = false
                             focusManager.clearFocus()
                         }
+                    ) {
+                        Text(if (isSetupComplete) "Update Plan" else "Start tracking expenses")
                     }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    TextField(
-                        value = text,
-                        onValueChange = { newText ->
-                            if (newText.isEmpty() || newText.matches(Regex("^\\d*\\.?\\d*$"))) {
-                                text = newText
-                            }
-                        },
-                        label = { Text("How much for $selectedExpense?") },
-                        singleLine = true,
-                        modifier = Modifier.focusRequester(focusRequester),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(onDone = { saveAction() })
-                    )
                 }
             }
+            showHistory -> {
+                HistoryScreen(csvData = csvContent, onBack = { showHistory = false })
+            }
+            else -> {
+                // --- UI #2: Full-Screen Main Dashboard ---
+                Column {
+                    val overallBudget = categoryBudgets.values.sum()
+                    val monthlyTotal = remember(csvContent) {
+                        val lines = csvContent.trim().split('\n').filter { it.isNotBlank() }
+                        if (lines.size <= 1) return@remember 0.0
+
+                        val header = lines.first().split(',')
+                        val currentMonthName = YearMonth.now().month.getDisplayName(TextStyle.FULL, Locale.getDefault())
+                        val monthIndex = header.indexOf(currentMonthName)
+                        if (monthIndex == -1) return@remember 0.0
+
+                        lines.drop(1).sumOf { row ->
+                            row.split(',').getOrNull(monthIndex)?.toDoubleOrNull() ?: 0.0
+                        }
+                    }
+
+                    val rawProgress by remember(monthlyTotal, overallBudget) {
+                        derivedStateOf {
+                            if (overallBudget > 0) (monthlyTotal / overallBudget).toFloat() else 0f
+                        }
+                    }
+
+                    val currentMascotState by remember(rawProgress) {
+                        derivedStateOf {
+                            when {
+                                rawProgress > 1.0f -> MascotState.SAD
+                                rawProgress > 0.9f -> MascotState.NERVOUS
+                                else -> MascotState.HAPPY
+                            }
+                        }
+                    }
+
+                    val animatedOverallProgress by animateFloatAsState(
+                        targetValue = rawProgress.coerceIn(0f, 1f),
+                        label = "OverallProgressAnimation"
+                    )
+
+                    Text("${YearMonth.now().month.getDisplayName(TextStyle.FULL, Locale.getDefault())}'s Expenses:", style = MaterialTheme.typography.titleLarge)
+                    CsvTable(csvData = csvContent, categoryBudgets = categoryBudgets)
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(text = "Remaining budget:", fontWeight = FontWeight.Bold)
+                        Text(text = String.format(Locale.US, "$%.2f", (overallBudget - monthlyTotal)), fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    LinearProgressIndicator(
+                        progress = { animatedOverallProgress },
+                        modifier = Modifier.fillMaxWidth(),
+                        color = if (rawProgress > 0.9) Color.Red else if (rawProgress > 0.75) Color.Yellow else Color.Green
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Crossfade(targetState = currentMascotState, label = "MascotCrossfade") { mascotState ->
+                        val mascotRes = when (mascotState) {
+                            MascotState.SAD -> R.drawable.mascot_sad
+                            MascotState.NERVOUS -> R.drawable.mascot_nervous
+                            MascotState.HAPPY -> R.drawable.mascot_happy
+                        }
+                        Image(
+                            painter = painterResource(id = mascotRes),
+                            contentDescription = "Budget Mascot",
+                            modifier = Modifier
+                                .size(80.dp)
+                                .align(Alignment.CenterHorizontally)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.weight(1f))
+
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        var menuExpanded by remember { mutableStateOf(false) }
+                        Box {
+                            Button(onClick = { menuExpanded = true }) {
+                                Text("Log Expense")
+                            }
+                            DropdownMenu(
+                                expanded = menuExpanded,
+                                onDismissRequest = { menuExpanded = false }
+                            ) {
+                                categories.sorted().forEach { category ->
+                                    DropdownMenuItem(
+                                        text = { Text(category) },
+                                        onClick = {
+                                            selectedExpense = category
+                                            text = ""
+                                            menuExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        OutlinedButton(onClick = {
+                            tempCategoryBudgets = categoryBudgets.mapValues { it.value.roundToInt().toString() }
+                            showBudgetSettings = true
+                        }) {
+                            Text(text = "Edit Budget")
+                        }
+                        IconButton(onClick = { showHistory = true }) {
+                            Icon(Icons.Default.BarChart, contentDescription = "Spending History")
+                        }
+                    }
+
+                    if (selectedExpense != null) {
+                        val saveAction = {
+                            if (text.isNotBlank()) {
+                                val currentMonth = YearMonth.now().month.getDisplayName(TextStyle.FULL, Locale.getDefault())
+                                val newValue = text.toDoubleOrNull() ?: 0.0
+                                val file = File(context.filesDir, "expenses.csv")
+
+                                val lines = if (file.exists() && file.readText().isNotBlank()) file.readLines() else emptyList()
+                                val header = if (lines.isNotEmpty()) lines[0].split(',').toMutableList() else mutableListOf("Category")
+                                val dataMap = if (lines.size > 1) {
+                                    lines.drop(1).mapNotNull { line ->
+                                        val parts = line.split(',')
+                                        if (parts.isNotEmpty()) parts[0] to parts.drop(1).toMutableList() else null
+                                    }.toMap().toMutableMap()
+                                } else {
+                                    mutableMapOf()
+                                }
+
+                                if (!header.contains(currentMonth)) {
+                                    header.add(currentMonth)
+                                }
+                                val monthIndex = header.indexOf(currentMonth) - 1
+
+                                if (!dataMap.containsKey(selectedExpense!!)) {
+                                    dataMap[selectedExpense!!] = mutableListOf()
+                                }
+                                val categoryData = dataMap[selectedExpense!!]!!
+                                while (categoryData.size <= monthIndex) {
+                                    categoryData.add("0.0")
+                                }
+                                val oldValue = categoryData[monthIndex].toDoubleOrNull() ?: 0.0
+                                categoryData[monthIndex] = (oldValue + newValue).toString()
+
+                                val updatedCsvContent = buildString {
+                                    appendLine(header.joinToString(","))
+                                    dataMap.keys.sorted().forEach { category ->
+                                        val rowData = dataMap[category]!!
+                                        while (rowData.size < header.size - 1) {
+                                            rowData.add("0.0")
+                                        }
+                                        appendLine("$category,${rowData.joinToString(",")}")
+                                    }
+                                }.trim()
+
+                                file.writeText(updatedCsvContent)
+                                csvContent = updatedCsvContent
+
+                                selectedExpense = null
+                                text = ""
+                                focusManager.clearFocus()
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        TextField(
+                            value = text,
+                            onValueChange = { newText ->
+                                if (newText.isEmpty() || newText.matches(Regex("^\\d*\\.?\\d*$"))) {
+                                    text = newText
+                                 }
+                            },
+                            label = { Text("How much for $selectedExpense?") },
+                            singleLine = true,
+                            modifier = Modifier.focusRequester(focusRequester),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
+                            keyboardActions = KeyboardActions(onDone = { saveAction() })
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun HistoryScreen(csvData: String, onBack: () -> Unit) {
+    val chartModelProducer = remember { ChartEntryModelProducer() }
+    var entries by remember { mutableStateOf<List<ChartEntry>>(emptyList()) }
+
+    LaunchedEffect(csvData) {
+        val newEntries = if (csvData.isNotBlank()) {
+            val lines = csvData.trim().split('\n').filter { it.isNotBlank() }
+            if (lines.size > 1) {
+                val header = lines.first().split(',').drop(1) // Drop "Category"
+                val totals = MutableList(header.size) { 0.0 }
+
+                lines.drop(1).forEach { line ->
+                    val values = line.split(',').drop(1)
+                    values.forEachIndexed { index, value ->
+                        if (index < totals.size) {
+                            totals[index] += value.toDoubleOrNull() ?: 0.0
+                        }
+                    }
+                }
+
+                totals.mapIndexed { index, total ->
+                    entryOf(index.toFloat(), total.toFloat())
+                }
+            } else {
+                emptyList()
+            }
+        } else {
+            emptyList()
+        }
+        entries = newEntries
+        chartModelProducer.setEntries(newEntries)
+    }
+
+    val bottomAxisValueFormatter = AxisValueFormatter<AxisPosition.Horizontal.Bottom> { value, _ ->
+        val lines = csvData.trim().split('\n').filter { it.isNotBlank() }
+        val header = if (lines.isNotEmpty()) lines.first().split(',').drop(1) else emptyList()
+        header.getOrNull(value.toInt())?.take(3) ?: ""
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+        Text("Spending History", style = MaterialTheme.typography.titleLarge)
+        Spacer(modifier = Modifier.height(16.dp))
+
+        if (entries.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(if (csvData.isBlank()) "No spending history yet." else "Processing data...")
+            }
+        } else {
+            Chart(
+                chart = columnChart(),
+                chartModelProducer = chartModelProducer,
+                startAxis = rememberStartAxis(),
+                bottomAxis = rememberBottomAxis(valueFormatter = bottomAxisValueFormatter),
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+        Button(onClick = onBack, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+            Text("Back to Dashboard")
         }
     }
 }

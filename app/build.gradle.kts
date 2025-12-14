@@ -54,9 +54,13 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
+    implementation("androidx.compose.material:material-icons-extended")
 
     // This dependency allows for downloadable fonts like Nunito
     implementation("androidx.compose.ui:ui-text-google-fonts")
+    implementation(libs.vico.compose)
+    implementation(libs.vico.core)
+
 
     // --- FIX: Add the desugaring library dependency ---
     coreLibraryDesugaring(libs.desugar.jdk.libs)
